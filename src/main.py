@@ -1,11 +1,52 @@
 import random
-
+import requests
 import cv2
 import flet as ft
 import base64
 import threading
 import time
 import numpy as np
+import win32print
+import win32ui
+from PIL import Image, ImageWin
+import qrcode
+
+
+def physical_print(path):
+    # Constants for printer dimensions
+    PHYSICALWIDTH = 110
+    PHYSICALHEIGHT = 117
+
+    # Get default printer
+    printer_name = win32print.GetDefaultPrinter()
+
+    # Create a device context for the printer
+    hDC = win32ui.CreateDC()
+    hDC.CreatePrinterDC(printer_name)
+
+    # Get the printer's physical dimensions
+    printer_size = hDC.GetDeviceCaps(PHYSICALWIDTH), hDC.GetDeviceCaps(PHYSICALHEIGHT)
+    # print(printer_size)
+    # exit()
+    # Load the image and rotate it if needed
+    bmp = Image.open(path)
+    # if bmp.size[0] < bmp.size[1]:
+    #     bmp = bmp.rotate(90, expand=True)
+
+    # Start the document
+    hDC.StartDoc(path)
+    hDC.StartPage()
+
+    # Draw the image on the printer canvas
+    dib = ImageWin.Dib(bmp)
+    dib.draw(hDC.GetHandleOutput(), (0, 0, printer_size[0], printer_size[1]))
+
+    # End the page and document
+    hDC.EndPage()
+    hDC.EndDoc()
+    hDC.DeleteDC()
+
+
 
 def extract_dominant_color(image):
     # Convert the image to HSV (Hue, Saturation, Value) color space
@@ -44,21 +85,37 @@ def map_color_to_score(dominant_color):
         "grey": "zenach.png",  # Low score for grey
     }
     _ = score_map.get(dominant_color, 0)  # Default to 0 if no color detected
-    if _ == "zenach.png":
-        return random.choice(list(score_map.values()))
+    # if _ == "zenach.png":
+    #     return random.choice(list(score_map.values()))
     return _
+    # return "pro_max.png"
 
 
 class VideoStreamApp:
+    def upload_image(self, path):
+        url = "http://164.90.224.22:8080/upload"
+        files = {
+            "image": open(path, 'rb')
+        }
+        r = requests.post(url=url, files=files)
+        print(r.json())
+        image = qrcode.make(r.json()['imageUrl'])
+        image.save("qr.png")
+        
+        self.qr_image.src_base64 = base64.b64encode(cv2.imread("qr.png", cv2.IMREAD_UNCHANGED)).decode()
+        self.page.update()
+
     def __init__(self, page: ft.Page):
         self.page = page
         self.page.window_full_screen = True
         self.camera_id = 0  # Default camera ID
         self.cap = None  # VideoCapture object
+        self.need_reset = False
 
         # UI components
-        self.video_image = ft.Image(
-        )
+        self.video_image = ft.Image()
+        self.qr_image = ft.Image()
+
         self.capture_button = ft.Button(
             text="Capture Photo",
             on_click=self.capture_photo
@@ -91,8 +148,9 @@ class VideoStreamApp:
         self.page.add(
             ft.Stack(
                 controls=[
-                    ft.Image(src=r"C:\Users\Abel\Desktop\mela\assets\frame_2.png", fit=ft.ImageFit.COVER, opacity=1),
+                    ft.Image(src=r"assets\frame_2.png", fit=ft.ImageFit.COVER, opacity=1),
                     self.video_image,
+                    self.qr_image,
                 ],
                 alignment=ft.alignment.top_center,
             )
@@ -103,11 +161,21 @@ class VideoStreamApp:
             content=ft.Image(src="assets\\capture.png", height=100)
         )
 
+        self.reset = ft.Container(
+            on_click=self.capture_photo,
+            content=ft.Button(text="reset", on_click=self.capture_photo)
+        )
+        self.print_button = ft.Container(
+            on_click=self.print_hard,
+            content=ft.Image(src="assets\\print.png", height=100)
+        )
+
 
         self.page.add(
             ft.Column(
                 controls=[
                     self.cap_b,
+                    self.qr_image,
                     self.camera_dropdown,
                 ]
             )
@@ -120,15 +188,24 @@ class VideoStreamApp:
         """Capture a photo from the selected camera and save it."""
         frame = self.get_video_frame(just_the_frame=True)
         if frame is not None:
-            # Save the captured photo
-            cv2.imwrite(f"captured_photo_{self.camera_id}.jpg", frame)
+            footer_image = cv2.imread('assets\\footer.png')
+
+            if frame.shape[1] != footer_image.shape[1]:
+                footer_image = cv2.resize(footer_image, (frame.shape[1], footer_image.shape[0]))
+
+            combined_image = np.vstack((frame, footer_image))
+
+            cv2.imwrite('final_result.jpg', combined_image)
+            self.upload_image("final_result.jpg")
             self.cap.release()
 
-        print_button = ft.Container(
-            on_click=self.capture_photo,
-            content=ft.Image(src="assets\\print.png", height=100)
-        )
-        self.page.add(print_button)
+        
+        self.page.add(self.print_button)
+    
+    def print_hard(self, e):
+        self.page.remove(self.print_button)
+        self.cap = cv2.VideoCapture(self.camera_id)
+        physical_print(f"captured_photo_{self.camera_id}.jpg")
 
     def update_camera(self, e):
         """Update the selected camera ID and restart the capture device."""
@@ -148,7 +225,8 @@ class VideoStreamApp:
             print(score)
 
             # Load the watermark image (ensure it's a PNG with transparency if needed)
-            watermark = cv2.imread(fr"C:\Users\Abel\Desktop\mela\assets\{score}", cv2.IMREAD_UNCHANGED)
+            watermark = cv2.imread(fr"assets\{score}", cv2.IMREAD_UNCHANGED)
+            # watermark = cv2.resize(watermark, (1000, 293))
             wm_height, wm_width = watermark.shape[:2]
 
             # Resize the watermark to fit in the bottom center
@@ -197,7 +275,7 @@ class VideoStreamApp:
             if frame_base64:
                 self.video_image.src_base64 = frame_base64
                 self.page.update()
-            time.sleep(0.1)  # Sleep for a short time to prevent excessive CPU usage
+            # time.sleep(0.1)  # Sleep for a short time to prevent excessive CPU usage
 
 # Run the Flet app
 def main(page: ft.Page):
