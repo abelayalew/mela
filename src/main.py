@@ -102,7 +102,7 @@ class VideoStreamApp:
         image = qrcode.make(r.json()['imageUrl'])
         image.save("qr.png")
         
-        self.qr_image.src_base64 = base64.b64encode(cv2.imread("qr.png", cv2.IMREAD_UNCHANGED)).decode()
+        self.qr_image.src = "qr.png"
         self.page.update()
 
     def __init__(self, page: ft.Page):
@@ -114,7 +114,9 @@ class VideoStreamApp:
 
         # UI components
         self.video_image = ft.Image()
-        self.qr_image = ft.Image()
+        self.qr_image = ft.Image(
+            
+        )
 
         self.capture_button = ft.Button(
             text="Capture Photo",
