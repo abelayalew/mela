@@ -108,7 +108,7 @@ class VideoStreamApp:
     def __init__(self, page: ft.Page):
         self.page = page
         self.page.window_full_screen = True
-        self.camera_id = 0  # Default camera ID
+        self.camera_id = 1
         self.cap = None  # VideoCapture object
         self.need_reset = False
 
@@ -150,7 +150,7 @@ class VideoStreamApp:
         self.page.add(
             ft.Stack(
                 controls=[
-                    ft.Image(src=r"assets\frame_2.png", fit=ft.ImageFit.COVER, opacity=1),
+                    ft.Image(src=r"assets\frame.png", fit=ft.ImageFit.COVER, opacity=1),
                     self.video_image,
                     self.qr_image,
                 ],
@@ -177,10 +177,15 @@ class VideoStreamApp:
             ft.Column(
                 controls=[
                     self.cap_b,
-                    self.qr_image,
                     self.camera_dropdown,
                 ]
             )
+        )
+        self.result_row = ft.Row(
+            controls=[
+                self.print_button,
+                self.qr_image
+            ]
         )
 
         # Start the video stream in a separate thread
@@ -201,11 +206,13 @@ class VideoStreamApp:
             self.upload_image("final_result.jpg")
             self.cap.release()
 
-        
-        self.page.add(self.print_button)
+        self.page.add(
+            self.result_row
+        )
+        # self.page.add(self.print_button)
     
     def print_hard(self, e):
-        self.page.remove(self.print_button)
+        self.page.remove(self.result_row)
         self.cap = cv2.VideoCapture(self.camera_id)
         physical_print(f"captured_photo_{self.camera_id}.jpg")
 
@@ -220,8 +227,10 @@ class VideoStreamApp:
         """Capture a video frame and resize it for portrait mode (4:5 aspect ratio) with a watermark."""
         ret, frame = self.cap.read()
         if ret:
+            print(frame.shape)
+            width = 1000
             # Resize the frame to the required dimensions (1000x1225)
-            resized_frame = cv2.resize(frame, (1000, 1225))
+            resized_frame = cv2.resize(frame, (1000, 1250))
             dominant_color = extract_dominant_color(resized_frame)
             score = map_color_to_score(dominant_color)
             print(score)
@@ -260,6 +269,8 @@ class VideoStreamApp:
 
             if just_the_frame:
                 return resized_frame
+            
+            # resized_frame = cv2.resize(resized_frame, (1000, 1225))
 
             # Convert the frame to base64 to display in the UI
             _, buffer = cv2.imencode('.png', resized_frame)
@@ -276,6 +287,8 @@ class VideoStreamApp:
             frame_base64 = self.get_video_frame()
             if frame_base64:
                 self.video_image.src_base64 = frame_base64
+                # self.video_image.width = 1000
+                # self.video_image.height = 1500
                 self.page.update()
             # time.sleep(0.1)  # Sleep for a short time to prevent excessive CPU usage
 
